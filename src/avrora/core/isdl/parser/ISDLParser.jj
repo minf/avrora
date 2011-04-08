@@ -1,0 +1,663 @@
+/**
+ * Copyright (c) 2004-2005, Regents of the University of California
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * Redistributions of source code must retain the above copyright notice,
+ * this list of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright
+ * notice, this list of conditions and the following disclaimer in the
+ * documentation and/or other materials provided with the distribution.
+ *
+ * Neither the name of the University of California, Los Angeles nor the
+ * names of its contributors may be used to endorse or promote products
+ * derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/**
+ * This file implements a parser for the instruction set description language
+ * that is used by Avrora to generate an optimized interpreter as well as
+ * an abstract interpreter, visitors, instruction representations, etc.
+ *
+ * @author Ben L. Titzer
+ **/
+options {
+  LOOKAHEAD = 1;
+  CHOICE_AMBIGUITY_CHECK = 2;
+  OTHER_AMBIGUITY_CHECK = 1;
+  STATIC = false;
+  DEBUG_PARSER = false;
+  DEBUG_LOOKAHEAD = false;
+  DEBUG_TOKEN_MANAGER = false;
+  ERROR_REPORTING = true;
+  JAVA_UNICODE_ESCAPE = false;
+  UNICODE_INPUT = false;
+  IGNORE_CASE = false;
+  USER_TOKEN_MANAGER = false;
+  USER_CHAR_STREAM = false;
+  BUILD_PARSER = true;
+  BUILD_TOKEN_MANAGER = true;
+  SANITY_CHECK = true;
+  FORCE_LA_CHECK = false;
+}
+
+
+PARSER_BEGIN(ISDLParser)
+
+package avrora.core.isdl.parser;
+import avrora.core.isdl.ast.*;
+import avrora.core.isdl.*;
+import java.util.List;
+import java.util.LinkedList;
+
+public class ISDLParser {
+
+}
+
+PARSER_END(ISDLParser)
+
+/* WHITE SPACE */
+
+SKIP :
+{
+  " "
+| "\t"
+| "\n"
+| "\r"
+| "\f"
+}
+
+/* COMMENTS */
+
+MORE :
+{
+  "//" : IN_SINGLE_LINE_COMMENT
+|
+  <"/**" ~["/"]> { input_stream.backup(1); } : IN_FORMAL_COMMENT
+|
+  "/*" : IN_MULTI_LINE_COMMENT
+}
+
+<IN_SINGLE_LINE_COMMENT>
+SPECIAL_TOKEN :
+{
+  <SINGLE_LINE_COMMENT: "\n" | "\r" | "\r\n" > : DEFAULT
+}
+
+<IN_FORMAL_COMMENT>
+SPECIAL_TOKEN :
+{
+  <FORMAL_COMMENT: "*/" > : DEFAULT
+}
+
+<IN_MULTI_LINE_COMMENT>
+SPECIAL_TOKEN :
+{
+  <MULTI_LINE_COMMENT: "*/" > : DEFAULT
+}
+
+<IN_SINGLE_LINE_COMMENT,IN_FORMAL_COMMENT,IN_MULTI_LINE_COMMENT>
+MORE :
+{
+  < ~[] >
+}
+
+
+/* RESERVED WORDS AND LITERALS */
+
+TOKEN :
+{
+  < INTEGER_LITERAL:
+       (<DECIMAL_LITERAL> | <HEX_LITERAL> | <BIN_LITERAL> | <OCTAL_LITERAL>)
+  >
+|
+  < #DECIMAL_LITERAL: (("-")? ["1"-"9"] (["0"-"9"])*) >
+|
+  < #HEX_LITERAL: (("0" ["x","X"])|"$") (["0"-"9","a"-"f","A"-"F"])+ >
+|
+  < #BIN_LITERAL: "0" ["b","B"] (["0", "1"])+ >
+|
+  < #OCTAL_LITERAL: "0" (["0"-"7"])* >
+|
+  < CHARACTER_LITERAL:
+      "'"
+      (   (~["'","\\","\n","\r"])
+        | ("\\"
+            ( ["n","t","b","r","f","\\","'","\""]
+            | ["0"-"7"] ( ["0"-"7"] )?
+            | ["0"-"3"] ["0"-"7"] ["0"-"7"]
+            )
+          )
+      )
+      "'"
+  >
+|
+  < STRING_LITERAL:
+      "\""
+      (   (~["\"","\\","\n","\r"])
+        | ("\\"
+            ( ["n","t","b","r","f","\\","'","\""]
+            | ["0"-"7"] ( ["0"-"7"] )?
+            | ["0"-"3"] ["0"-"7"] ["0"-"7"]
+            )
+          )
+      )*
+      "\""
+  >
+}
+
+/* Reserved words */
+TOKEN :
+{
+    < INSTRUCTION : "instruction" >
+  | < ARCHITECTURE : "architecture" >
+  | < FORMAT : "format" >
+  | < OPERAND : "operand" >
+  | < WHERE : "where" >
+  | < REGISTER : "register" >
+  | < PRIORITY : "priority" >
+  | < ENCODING : "encoding" >
+  | < EXECUTE : "execute" >
+  | < LOCAL : "local" >
+  | < IF : "if" >
+  | < ELSE : "else" >
+  | < AND: "and" >
+  | < OR: "or" >
+  | < XOR: "xor" >
+  | < SUBROUTINE: "subroutine" >
+  | < INLINE: "inline" >
+  | < EXTERNAL: "external" >
+  | < RETURN: "return" >
+  | < BOOLEAN_LITERAL: "true" | "false" >
+  | < CYCLES: "cycles" >
+  | < PSEUDO: "pseudo" >
+  | < WHEN : "when" >
+  | < SYNTAX: "syntax" >
+}
+
+TOKEN :
+{
+    < LBRACKET: "{" >
+  | < RBRACKET: "}" >
+  | < EQUALS: "=" >
+  | < COMMA: "," >
+  | < LPAREN: "(" >
+  | < RPAREN: ")" >
+  | < SEMI: ";" >
+  | < SHIFTLEFT: "<<" >
+  | < SHIFTRIGHT: ">>" >
+  | < ADD: "+" >
+  | < SUB: "-" >
+  | < MUL: "*" >
+  | < DIV: "/" >
+  | < B_AND: "&" >
+  | < B_OR: "|" >
+  | < B_XOR: "^" >
+  | < NOT: "!" >
+  | < B_COMP: "~" >
+  | < EQUAL: "==" >
+  | < NOTEQUAL: "!=" >
+  | < LESS: "<" >
+  | < LESSEQ: "<=" >
+  | < GREATER: ">" >
+  | < GREATEREQ: ">=" >
+  | < DOLLAR: "$" >
+}
+
+/* Instruction MNEMONICS */
+
+/* IDENTIFIERS */
+
+TOKEN :
+{
+  < IDENTIFIER: <LETTER> (<LETTER>|<DIGIT>)* >
+|
+  < #LETTER:
+      [ "a"-"z", "A"-"Z", "_"]
+  >
+|
+  < #DIGIT:
+      [ "0"-"9" ]
+  >
+}
+
+
+/* Begin GRAMMAR */
+
+
+Architecture Architecture() : { Token n; Architecture a; }
+{
+    "architecture" n = <IDENTIFIER> { a = new Architecture(n); }"{"
+        (Item(a))*
+    "}" { a.process(); return a; }
+}
+
+void Item(Architecture a) : {}
+{
+    Instruction(a)
+  | FormatDecl(a)
+  | OperandDecl(a)
+  | RegisterDecl(a)
+  | Subroutine(a)
+}
+
+void Instruction(Architecture a) :
+{
+    Token n;
+    InstrDecl i;
+    List o = new LinkedList(),
+         s = new LinkedList();
+    EncodingDecl e = null;
+    List el = new LinkedList();
+    Token sy = null;
+    Token c = null;
+    boolean pseudo = false;
+}
+{
+    ["pseudo" { pseudo = true; }] "instruction" n = <STRING_LITERAL> o = Formals() "{"
+        ( e = Encoding(n) { el.add(e); })*
+        [ sy = Syntax() ]
+        [ c = Cycles() ]
+        [ s = Execute(s) ]
+
+    "}" ";" { a.addInstruction(new InstrDecl(pseudo, n, o, sy, c, s, el)); }
+}
+
+Token Syntax() : { Token sy; }
+{
+    "syntax" "=" sy = <STRING_LITERAL> ";" { return sy; }
+}
+
+Token Cycles() : { Token c; }
+{
+    "cycles" "=" c = <INTEGER_LITERAL> ";" { return c; }
+}
+
+EncodingDecl Encoding(Token n) : { EncodingDecl d; EncodingDecl.Cond ec = null; }
+{
+    "encoding" "=" d = Format(n) [ec = EncodingCond() { d.setCond(ec); }] ";" { return d; }
+}
+
+EncodingDecl.Cond EncodingCond() : { Token n; Expr e; }
+{
+    "when" n = <IDENTIFIER> "==" e = Expr() { return new EncodingDecl.Cond(n, e); }
+}
+
+List Execute(List s) : { }
+{
+    "execute" "=" Block(s) ";" { return s; }
+}
+
+void FormatDecl(Architecture a) : { Token n; EncodingDecl d; }
+{
+    "format" n = <IDENTIFIER> "=" d = Format(n) ";" { a.addEncoding(d); }
+}
+
+void OperandDecl(Architecture a) : { Token n, k, b; }
+{
+    "operand" n = <IDENTIFIER> "[" b = <INTEGER_LITERAL> "]" ":" k = Kind() "=" OperandTail(a, n, b, k) ";"
+}
+
+void OperandTail(Architecture a, Token n, Token k, Token b) : { OperandDecl d; }
+{
+    (d = OperandSetDecl(n, b, k) | d = OperandRangeDecl(n, b, k))
+    { a.addOperand(d); }
+}
+
+OperandDecl OperandSetDecl(Token n, Token k, Token b) : { List l = new LinkedList(); }
+{
+    "{" OperandSetElem(l) ("," OperandSetElem(l))* "}"
+    { return new OperandDecl.RegisterSet(n, b, k, l); }
+}
+
+void OperandSetElem(List l) : { Token n, i; }
+{
+    (n = <IDENTIFIER> "=" i = <INTEGER_LITERAL>)
+    { l.add(new OperandDecl.RegisterEncoding(n, i)); }
+}
+
+OperandDecl OperandRangeDecl(Token n, Token k, Token b) : { Token l, h; }
+{
+    "[" l = <INTEGER_LITERAL> "," h = <INTEGER_LITERAL> "]"
+    { return new OperandDecl.Immediate(n, b, k, l, h); }
+}
+
+Token Kind() : { Token t; }
+{
+    ( t = <IDENTIFIER> )
+    { return t; }
+}
+
+List OperandSet() : { Token i; List l = new LinkedList(); }
+{
+    "{" i = <IDENTIFIER> { l.add(i); } ("," i = <IDENTIFIER> { l.add(i); })* "}"
+    { return l; }
+}
+
+void RegisterDecl(Architecture a) : {}
+{
+    "register" <IDENTIFIER> "=" <INTEGER_LITERAL> ";"
+}
+
+EncodingDecl Format(Token n) : { Token pr = null; EncodingDecl d; }
+{
+   ["priority" pr = <INTEGER_LITERAL>] (d = DerivedFormat(pr, n) | d = NewFormat(pr, n)) { return d; }
+}
+
+EncodingDecl DerivedFormat(Token pr, Token n) : { Token p; EncodingDecl d; List l = new LinkedList(); }
+{
+    p = <IDENTIFIER> ["where" l = SubstitutionList()]
+    { return new EncodingDecl.Derived(n, pr, p, l); }
+}
+
+EncodingDecl NewFormat(Token pr, Token n) : { List l; }
+{
+    "{" l = ExprList() "}" { return new EncodingDecl(n, pr, l); }
+}
+
+List SubstitutionList() : { List l = new LinkedList(); EncodingDecl.Substitution s; }
+{
+    "{" s = Substitution() { l.add(s); } ("," s = Substitution() { l.add(s); })* "}" { return l; }
+}
+
+EncodingDecl.Substitution Substitution() : { Token n; Expr e; }
+{
+    n = <IDENTIFIER> "=" e = Expr() { return new EncodingDecl.Substitution(n, e); }
+}
+
+List Formals() : { CodeRegion.Operand o; List l = new LinkedList(); }
+{
+    [ o = Formal() { l.add(o); } ("," o = Formal() { l.add(o); })* ] { return l; }
+}
+
+CodeRegion.Operand Formal() : { Token n, t; }
+{
+    n = <IDENTIFIER> ":" t = <IDENTIFIER> { return new CodeRegion.Operand(n, t); }
+}
+
+void Subroutine(Architecture a) : { boolean i = false; Token m, r; List f, l = new LinkedList(); }
+{
+    (["inline" { i = true; }] "subroutine" m = <IDENTIFIER>
+       "(" f = Formals() ")" ":" r = <IDENTIFIER> Block(l) ";"
+        { a.addSubroutine(new SubroutineDecl(i, m, f, r, l)); } )
+   |("external" m = <IDENTIFIER> "(" f = Formals() ")" ":" r = <IDENTIFIER> ";"
+        { a.addSubroutine(new SubroutineDecl(i, m, f, r, null)); } )
+
+}
+
+Expr Expr() : { Expr e; }
+{
+    e = Cond_Or_Expr() { return e; }
+}
+
+List ExprList() : { List l = new LinkedList(); Expr e; }
+{
+    (e = Expr() { l.add(e); } ("," e = Expr() { l.add(e); } )*)
+    { return l; }
+}
+
+Expr Term() : { Expr e; }
+{
+    ( LOOKAHEAD(2) e = CallExpr()
+    | e = VarUse()
+    | e = Literal()
+    | e = MapAccess()
+    | "(" e = Expr() ")"
+    )
+    [e = BitRange(e)]
+    [e = Conversion(e)]
+    { return e; }
+}
+
+Expr Conversion(Expr e) : { Token t; }
+{
+  ":" t = <IDENTIFIER> { return new ConversionExpr(e, t); }
+}
+
+Expr MapAccess() : { Expr e; Token t; }
+{
+  "$" t = <IDENTIFIER> "(" e = Expr() ")" { return new MapExpr(t, e); }
+}
+
+Expr VarUse() : { Token t; }
+{
+  t = <IDENTIFIER> { return new VarExpr(t); }
+}
+
+Expr Literal() : { Token t; }
+{
+  (t = <INTEGER_LITERAL> { return new Literal.IntExpr(t); })
+ |(t = <BOOLEAN_LITERAL> { return new Literal.BoolExpr(t); })
+}
+
+Expr CallExpr() : { Token t; List l; }
+{
+  t = <IDENTIFIER> l = Parameters() { return new CallExpr(t, l); }
+}
+
+List Parameters() : { List l = new LinkedList(); }
+{
+    "(" [ l = ExprList() ] ")"
+    { return l; }
+}
+
+Stmt Statement() : { Stmt s; }
+{
+  (
+    s = LocalDecl()
+  | s = IfStatement()
+  | LOOKAHEAD(2) s = Assignment()
+  | s = CallStmt()
+  | s = ReturnStmt()
+  ) { return s; }
+}
+
+DeclStmt LocalDecl() : { Token n, t; Expr e; }
+{
+    "local" n = <IDENTIFIER> ":" t = <IDENTIFIER> "=" e = Expr() ";"
+    { return new DeclStmt(n, t, e); }
+}
+
+IfStmt IfStatement() : { Expr c; List t = new LinkedList(), f = new LinkedList(); }
+{
+    "if" "(" c = Expr() ")" SingleStatement(t)
+        [ LOOKAHEAD(1) "else" SingleStatement(f) ]
+    { return new IfStmt(c, t, f); }
+}
+
+ReturnStmt ReturnStmt() : { Expr e; }
+{
+    "return" e = Expr() ";" { return new ReturnStmt(e); }
+}
+
+void SingleStatement(List l) : { Stmt s; }
+{
+    s = Statement() { l.add(s); } | (Block(l))
+}
+
+AssignStmt Assignment() : { AssignStmt s; }
+{
+    ( s = VarAssignment()
+    | s = MapAssignment()) ";"
+    { return s; }
+}
+
+CallStmt CallStmt() : { Token m; List l; }
+{
+    m = <IDENTIFIER> l = Parameters() ";" { return new CallStmt(m, l); }
+}
+
+AssignStmt VarAssignment() : { AssignStmt s; Token v, i, j; Expr e; }
+{
+    (v = <IDENTIFIER> s = VarAssignEnd(v))
+    { return s; }
+}
+
+AssignStmt VarAssignEnd(Token v) : { AssignStmt s; Token i, j; Expr e, b; }
+{
+    (("=" e = Expr() { s = new VarAssignStmt(v, e); })
+    | LOOKAHEAD(3) ("[" i = <INTEGER_LITERAL> ":" j = <INTEGER_LITERAL> "]"
+      "=" e = Expr() { s = new VarBitRangeAssignStmt(v, i, j, e); })
+    |("[" b = Expr() "]"
+      "=" e = Expr() { s = new VarBitAssignStmt(v, b, e); })
+    ) { return s; }
+}
+
+AssignStmt MapAssignment() : { AssignStmt s; Token v, i, j; Expr ind, e; }
+{
+    "$" v = <IDENTIFIER> "(" ind = Expr() ")" s = MapAssignmentEnd(v, ind)
+    { return s; }
+}
+
+AssignStmt MapAssignmentEnd(Token v, Expr ind) : { AssignStmt s; Token i, j; Expr e, b; }
+{
+    (
+     ("=" e = Expr() { s = new MapAssignStmt(v, ind, e); })
+    | LOOKAHEAD(3) ("[" i = <INTEGER_LITERAL> ":" j = <INTEGER_LITERAL> "]"
+      "=" e = Expr() { s = new MapBitRangeAssignStmt(v, ind, i, j, e); })
+    |("[" b = Expr() "]"
+      "=" e = Expr() { s = new MapBitAssignStmt(v, ind, b, e); })
+    ) { return s; }
+}
+
+List Block(List l) : { Stmt s; }
+{
+    "{" (s = Statement() { l.add(s); })* "}"
+    { return l; }
+}
+
+Expr BitRange(Expr e) : { Expr et; Token t1, t2; }
+{
+    "["
+    (LOOKAHEAD(2) (t1 = <INTEGER_LITERAL> ":" t2 = <INTEGER_LITERAL>
+     { e =  new BitRangeExpr(e, t1, t2); })
+   | (et = Expr()
+     { e = new BitExpr(e, et); }))
+    "]"
+    { return e; }
+}
+
+
+Expr Cond_Or_Expr() : { Expr e, et; Token tok; }
+{
+  e = Cond_Xor_Expr()
+  ( tok = "or" et = Cond_Xor_Expr()
+    { e = new Logical.OrExpr(e, et); } )*
+  { return e; }
+}
+
+Expr Cond_Xor_Expr() : { Expr e, et; Token tok; }
+{
+  e = Cond_And_Expr()
+  ( tok = "xor" et = Cond_And_Expr()
+    { e = new Logical.XorExpr(e, et); } )*
+  { return e; }
+}
+
+Expr Cond_And_Expr() : { Expr e, et; Token tok; }
+{
+  e = Or_Expr()
+  ( tok = "and" et = Or_Expr()
+    { e = new Logical.AndExpr(e, et); } )*
+  { return e; }
+}
+
+Expr Or_Expr() : { Expr e, et; Token tok; }
+{
+  e = Xor_Expr()
+  ( tok = "|" et = Xor_Expr()
+    { e = new Arith.OrExpr(e, et); } )*
+  { return e; }
+}
+
+Expr Xor_Expr() : { Expr e, et; Token tok; }
+{
+  e = And_Expr()
+  ( tok = "^" et = And_Expr()
+    { e = new Arith.XorExpr(e, et); } )*
+  { return e; }
+}
+
+Expr And_Expr() : { Expr e, et; Token tok; }
+{
+  e = Equ_Expr()
+  ( tok = "&" et = Equ_Expr()
+    { e = new Arith.AndExpr(e, et); } )*
+  { return e; }
+}
+
+Expr Equ_Expr() : { Expr e, et; }
+{
+  e = Rel_Expr() (
+    ("==" et = Rel_Expr() { e = new Logical.EquExpr(e, et); })
+   |("!=" et = Rel_Expr() { e = new Logical.NequExpr(e, et); })
+  )*
+  { return e; }
+}
+
+Expr Rel_Expr() : { Expr e, et; Token tok; }
+{
+  e = Shift_Expr() (
+    ("<"  et = Shift_Expr() { e = new Logical.LessExpr(e, et); } )
+   |(">"  et = Shift_Expr() { e = new Logical.GreaterExpr(e, et); } )
+   |("<=" et = Shift_Expr() { e = new Logical.LessEquExpr(e, et); } )
+   |(">=" et = Shift_Expr() { e = new Logical.GreaterEquExpr(e, et); } )
+  )*
+  { return e; }
+}
+
+Expr Shift_Expr() : { Expr e, et; Token tok; }
+{
+  e = Add_Expr() (
+    ("<<" et = Add_Expr() { e = new Arith.ShiftLeftExpr(e, et); } )
+   |(">>" et = Add_Expr() { e = new Arith.ShiftRightExpr(e, et); } )
+  )*
+  { return e; }
+}
+
+Expr Add_Expr() : { Expr e, et; Token tok; }
+{
+  e = Mul_Expr() (
+    ("+" et = Mul_Expr() { e = new Arith.AddExpr(e, et); } )
+   |("-" et = Mul_Expr() { e = new Arith.SubExpr(e, et); } )
+  )*
+  { return e; }
+}
+
+Expr Mul_Expr() : { Expr e, et; Token tok; }
+{
+  e = Un_Expr() (
+    ("*" et = Un_Expr() { e = new Arith.MulExpr(e, et); } )
+   |("/" et = Un_Expr() { e = new Arith.DivExpr(e, et); } )
+  )*
+  { return e; }
+}
+
+Expr Un_Expr() : { Expr e; }
+{
+   (
+    ("~" e = Term() { e = new Arith.CompExpr(e); })
+   |("!" e = Term() { e = new Logical.NotExpr(e); })
+   |("-" e = Term() { e = new Arith.NegExpr(e); })
+   |(e = Term())
+   )
+  { return e; }
+}
+
+
